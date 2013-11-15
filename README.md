@@ -1,4 +1,4 @@
 userial
 =======
 
-micro serial
+This is a minimal serial terminal program.
