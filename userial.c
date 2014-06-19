@@ -44,14 +44,15 @@ static unsigned int baudrate = 38400;
 static unsigned char flowcontrol = 0;
 static unsigned char csize = 8;
 static unsigned char twostopbits = 0;
+static int serial_fd = -1;
 
 
 #define max(a,b) ( (a > b) ? a : b )
 
 
-static void serial_flush_input(int ttyfd)
+static void serial_flush_input_output(int ttyfd)
 {
-    tcflush(ttyfd, TCIFLUSH);
+    tcflush(ttyfd, TCIOFLUSH);
 }
 
 
@@ -133,8 +134,8 @@ static int configure_serial_port(int fd)
     // no blocking read
     newtio.c_cc[VMIN] = 0;
 
-    serial_flush_input(fd);
     tcsetattr(fd, TCSANOW, &newtio);
+    serial_flush_input_output(fd);
 
     return 0;
 }
@@ -144,7 +145,11 @@ static int configure_serial_port(int fd)
 static void handle_terminate_signal(int sig)
 {
     if ((sig == SIGTERM) || (sig == SIGINT))
+    {
         terminate = 1;
+        if (serial_fd >= 0)
+            serial_flush_input_output(serial_fd);
+    }
 }
 
 
@@ -219,7 +224,6 @@ int main(int argc, char *argv[])
 {
     int ret = 0;
     struct stat st;
-    int fd = -1;
     int status = 0;
     int opt;
 
@@ -251,15 +255,15 @@ int main(int argc, char *argv[])
         goto main_init_error;
     }
 
-    fd = open(device_path, O_RDWR | O_NOCTTY | O_NONBLOCK | O_NDELAY);
-    if (fd < 0)
+    serial_fd = open(device_path, O_RDWR | O_NOCTTY | O_NONBLOCK | O_NDELAY);
+    if (serial_fd < 0)
     {
         fprintf(stderr, "Error: unable to open %s\n", device_path);
         ret = EXIT_FAILURE;
         goto main_init_error;
     }
 
-    if (configure_serial_port(fd) != 0)
+    if (configure_serial_port(serial_fd) != 0)
     {
         fprintf(stderr, "Error: unable to configure %s\n", device_path);
         ret = EXIT_FAILURE;
@@ -274,10 +278,13 @@ int main(int argc, char *argv[])
     signal(SIGINT, handle_terminate_signal);
     signal(SIGTERM, handle_terminate_signal);
 
-    forward(fd);
+    forward(serial_fd);
 
 main_init_error:
-    if (fd >= 0)
-        close(fd);
+    if (serial_fd >= 0)
+    {
+        close(serial_fd);
+        serial_fd = -1;
+    }
     return ret;
 }
